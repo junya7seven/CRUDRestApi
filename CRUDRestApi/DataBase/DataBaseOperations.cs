@@ -120,6 +120,7 @@ namespace CRUDRestApi.DataBase
                 {
                     await connection.OpenAsync();
                     var sql = "DELETE FROM users_info WHERE user_id = @id";
+                    await connection.ExecuteAsync(await DeleteUserFromHistory(id), new { Id = id });
                     var result = await connection.ExecuteAsync(sql, new { Id = id });
                     return result > 0;
                 }
@@ -129,6 +130,11 @@ namespace CRUDRestApi.DataBase
                 _logger.LogError(exception, $"An error occurred when deleting the user with ID {id}.");
                 throw;
             }
+        }
+        public async Task<string> DeleteUserFromHistory(int id)
+        {
+            var sql = "DELETE FROM user_changes_history WHERE user_id = @Id";
+            return sql;
         }
 
         public async Task<bool> ChangeUserValue(int userId, string newValue, string column)
