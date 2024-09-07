@@ -100,7 +100,7 @@ namespace CRUDRestApi.Controllers
             }
         }
 
-        [HttpPost("change")]
+        [HttpPut("change")]
         public async Task<IActionResult> ChangeValue([FromQuery] string value, [FromQuery] string column, [FromQuery] int id)
         {
             if (string.IsNullOrEmpty(value) || string.IsNullOrEmpty(column))
@@ -128,18 +128,39 @@ namespace CRUDRestApi.Controllers
                 _logger.LogInformation($"User with ID {id} was updated. {column} changed to {value}");
                 return Ok("User updated successfully");
             }
-            catch (Exception ex)
+            catch (Exception exception)
             {
-                _logger.LogError(ex, $"An error occurred while updating user with ID {id}");
+                _logger.LogError(exception, $"An error occurred while updating user with ID {id}");
                 return StatusCode(StatusCodes.Status500InternalServerError, "Internal server error");
             }
 
         }
 
-        /*[HttpGet("Id:int")]
+        [HttpGet("Id:int")]
         public async Task<IActionResult> GetHistoryChange(int id)
         {
-            return Ok();
-        }*/
+            if (id <= 0)
+            {
+                _logger.LogWarning($"Invalid ID provided: {id}");
+                return BadRequest("Invalid ID");
+            }
+            try
+            {
+                var userChangesHistory = await _userService.GetUserChangesHistory(id);
+                if (userChangesHistory == null)
+                {
+                    _logger.LogWarning($"User with ID {id} not found");
+                    return NotFound();
+                }
+                _logger.LogInformation($"Fetching userChangesHistory with ID {id}");
+                return Ok(userChangesHistory);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"An error occurred while retrieving the user with ID {id}");
+                return StatusCode(StatusCodes.Status500InternalServerError, "Internal server error");
+            }
+        }
+
     }
 }

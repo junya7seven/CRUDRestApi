@@ -9,5 +9,6 @@ namespace CRUDRestApi.Service.Interfaces
         Task<User> GetUserById(int id);
         Task<bool> DeleteUser(int id);
         Task<bool> UpdateUserField(int userId, string column, string newValue);
+        Task<IEnumerable<UserHistoryChange>> GetUserChangesHistory(int id);
     }
 }

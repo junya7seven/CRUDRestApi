@@ -5,6 +5,7 @@ using CRUDRestApi.Models;
 using Dapper;
 using Npgsql;
 using System.Reflection;
+using System.Threading.Channels;
 using static Npgsql.Replication.PgOutput.Messages.RelationMessage;
 
 namespace CRUDRestApi.DataBase
@@ -108,6 +109,45 @@ namespace CRUDRestApi.DataBase
                 throw; 
             }
         }
+        public async Task<IEnumerable<UserHistoryChange>> GetByIdHistoyChanges(int id)
+        {
+            CheckConnectionString();
+            if (id <= 0)
+            {
+                throw new InvalidIdException(id);
+            }
+            try
+            {
+                using(var connection = new NpgsqlConnection(_connectionString))
+                {
+                    await connection.OpenAsync();
+
+                    var sql = @"SELECT change_id AS Change_Id, 
+                               User_Id AS User_Id, 
+                               change_column AS ChangedColumn, 
+                               old_value AS OldValue, 
+                               new_value AS NewValue, 
+                               change_date AS DateTime 
+                        FROM user_changes_history 
+                        WHERE User_Id = @User_Id
+                        ORDER BY change_date DESC";
+                    var result = await connection.QueryAsync<UserHistoryChange>(sql, new { Id = id });
+                    if(!result.Any())
+                    {
+                        _logger.LogWarning($"No changes found for user with ID {id}.");
+                        return null;
+                    }
+                    _logger.LogInformation($"Changes for user with ID {id} retrieved successfully.");
+                    return result;
+                }
+                
+            }
+            catch (Exception exception)
+            {
+                _logger.LogError(exception, $"An error occurred while retrieving changes for user with ID {id}.");
+                throw;
+            }
+        }
 
         public async Task<bool> DeleteUser(int id)
         {
@@ -120,7 +160,7 @@ namespace CRUDRestApi.DataBase
                 {
                     await connection.OpenAsync();
                     var sql = "DELETE FROM users_info WHERE user_id = @id";
-                    await connection.ExecuteAsync(await DeleteUserFromHistory(id), new { Id = id });
+                    await connection.ExecuteAsync(await DeleteUserFromHistory(id), new { Id = id }); // Delete from history changes
                     var result = await connection.ExecuteAsync(sql, new { Id = id });
                     return result > 0;
                 }
@@ -140,6 +180,7 @@ namespace CRUDRestApi.DataBase
         public async Task<bool> ChangeUserValue(int userId, string newValue, string column)
         {
             CheckConnectionString();
+
             if (string.IsNullOrEmpty(newValue) || string.IsNullOrEmpty(column))
             {
                 _logger.LogWarning("Invalid value or column");
@@ -161,20 +202,24 @@ namespace CRUDRestApi.DataBase
                             return false;
                         }
                     }
-                    else
+
+                    var oldValue = await connection.ExecuteScalarAsync<string>(
+                        $"SELECT {column} FROM users_info WHERE user_id = @UserId",
+                        new { UserId = userId });
+
+                    if (oldValue == newValue)
                     {
-                        _logger.LogWarning($"Invalid column name: {column}");
+                        _logger.LogInformation($"No changes detected for user ID {userId}. {column} remains the same.");
                         return false;
                     }
 
                     var sql = $"UPDATE users_info SET {column} = @NewValue WHERE user_id = @UserId";
-
                     var result = await connection.ExecuteAsync(sql, new { NewValue = newValue, UserId = userId });
 
                     if (result > 0)
                     {
                         _logger.LogInformation($"User with ID {userId} successfully updated. {column} changed to {newValue}.");
-                        await HistoryChange(userId, column, newValue);
+                        await HistoryChange(userId, column, newValue, oldValue); 
                         return true;
                     }
                     else
@@ -191,13 +236,11 @@ namespace CRUDRestApi.DataBase
             }
         }
 
-        public async Task HistoryChange(int userId, string column, string newValue)
+
+        public async Task HistoryChange(int userId, string column, string newValue, string oldValue)
         {
-            if (string.IsNullOrEmpty(_connectionString))
-            {
-                _logger.LogError("No connection string provided");
-                throw new Exception("No connection string provided");
-            }
+            CheckConnectionString();
+
             if (string.IsNullOrEmpty(newValue) || string.IsNullOrEmpty(column))
             {
                 _logger.LogWarning("Invalid value or column");
@@ -210,19 +253,9 @@ namespace CRUDRestApi.DataBase
                 {
                     await connection.OpenAsync();
 
-                    var oldValue = await connection.ExecuteScalarAsync<string>(
-                        $"SELECT {column} FROM users_info WHERE user_id = @UserId",
-                        new { UserId = userId });
-
-                    if (oldValue == null)
-                    {
-                        _logger.LogWarning($"No value found for column {column} and user ID {userId}");
-                        return;
-                    }
-
                     var userHistory = new UserHistoryChange
                     {
-                        UserId = userId,
+                        User_Id = userId,
                         ChangedColumn = column,
                         OldValue = oldValue,
                         NewValue = newValue,
@@ -230,26 +263,23 @@ namespace CRUDRestApi.DataBase
                     };
 
                     var sqlHistory = @"INSERT INTO user_changes_history (user_id, change_column, old_value, new_value, change_date)
-                               VALUES (@UserId, @ChangedColumn, @OldValue, @NewValue, @DateTime)";
+                       VALUES (@user_id, @ChangedColumn, @OldValue, @NewValue, @DateTime)";
 
                     var result = await connection.ExecuteAsync(sqlHistory, userHistory);
 
                     if (result > 0)
                     {
                         _logger.LogInformation($"Change recorded in history for user ID {userId}. {column} changed from {oldValue} to {newValue}.");
-                        return;
                     }
                     else
                     {
                         _logger.LogWarning($"Failed to record change in history for user ID {userId}.");
-                        return;
                     }
                 }
             }
             catch (Exception exception)
             {
                 _logger.LogError(exception, "An error occurred while recording the change history.");
-                return;
             }
         }
 

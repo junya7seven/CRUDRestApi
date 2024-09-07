@@ -2,6 +2,7 @@
 using CRUDRestApi.DataBase.Models;
 using CRUDRestApi.Models;
 using CRUDRestApi.Service.Interfaces;
+using System;
 
 namespace CRUDRestApi.Service
 {
@@ -67,9 +68,40 @@ namespace CRUDRestApi.Service
 
                 return result; 
             }
-            catch (Exception ex)
+            catch (Exception exception)
             {
-                _logger.LogError(ex, "An error occurred while retrieving the user with ID {Id}.", id);
+                _logger.LogError(exception, "An error occurred while retrieving the user with ID {Id}.", id);
+                throw;
+            }
+        }
+        public async Task<IEnumerable<UserHistoryChange>> GetUserChangesHistory(int id)
+        {
+            if (id <= 0)
+            {
+                _logger.LogWarning("Invalid user ID provided: {Id}", id);
+                return null;
+            }
+
+            try
+            {
+                var searchId = await _db.GetById(id);
+
+                if (searchId == null)
+                {
+                    _logger.LogWarning("User with ID {Id} not found.", id);
+                    return null;
+                }
+                var result = await _db.GetByIdHistoyChanges(id);
+                if(!result.Any())
+                {
+                    _logger.LogWarning($"No changes found for user with ID {id}.");
+                    return null;
+                }
+                return result;
+            }
+            catch (Exception exception)
+            {
+                _logger.LogError(exception, "An error occurred while retrieving the user with ID {Id}.", id);
                 throw;
             }
         }
